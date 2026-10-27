@@ -1,0 +1,12 @@
+d=1 k1=256 143s
+    k1=512 283s, so not worth it
+    k1=128 87s, so suboptimal
+k1=256 from now on
+d=2 691s  2.99M positions
+d=3 2618s 2.83M positions
+
+
+d=8 40min 3k positions
+3k positions @d8 per hour?? how warp desynchronization kills...
+
+cpu approx @d8 120pos/s

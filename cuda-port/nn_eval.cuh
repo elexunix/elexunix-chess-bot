@@ -5,9 +5,10 @@
 #define INCLUDE_NN_EVAL
 #include "board.cuh"
 
-const std::string filename_old = "model_v8_128_8_8.bin",
-                  filename_new = "model_v8_128_8_8.bin";
-                  //filename_new = "model9d9.bin";
+const std::string models_dir = "/home/elexunix/aprog/cpp/tests/tests06__/test0655-chess/bitmask-v9-nnue/models/";
+const std::string filename_old = models_dir+"model_v9_128_8_8.bin",
+                  filename_new = models_dir+"model_v9_128_8_8.bin";
+
 float q_step_01, q_step_12, q_step_23, q_step_34;
 
 constexpr int s0 = 768 + 5;
@@ -47,7 +48,8 @@ struct nnue_state_t {  //   @3s 304.5:232.5 +47 Elo
   const float (*nn_w01)[s1], *nn_b1;
   static constexpr bool quantize = false;//IMPORTANT: at most one should be on, since weight arrays are shared
   alignas(32) float a1_pre_relu[2][s1];
-  alignas(32) accumulator_t a1_pre_relu_q[2][s1];
+  //alignas(32) accumulator_t a1_pre_relu_q[2][s1];
+  accumulator_t a1_pre_relu_q[1][1];  // fake but under if constexpr(false)
 
   __device__ nnue_state_t(const board& b) /*: nn_w01(use_new ? nn_w01_new : nn_w01_old), nn_b1(use_new ? nn_b1_new : nn_b1_old)*/ {  //, const float nn_w01[s0][s1], const float nn_b1[s1]) : nn_w01(nn_w01), nn_b1(nn_b1) {
     if constexpr (use_new)

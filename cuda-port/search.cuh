@@ -35,7 +35,7 @@ struct pair {
   U second;
 };
 
-constexpr int max_tt_size = 1024;
+constexpr int max_tt_size = 512;
 template<bool use_new>
 class TT {  // @.3s 187:118 +80 Elo
   tt_entry data[max_tt_size];
@@ -79,13 +79,11 @@ template<bool use_new>
 __device__ int quiescence(const board& b, nnue_state_t<use_new>& nnue_state, int alpha, int beta, int max_diving_depth) {  // this guy is eager to terminate
   __attribute__((assume(alpha < beta)));
   const int mate = 9e3 * pow(1.01, max_diving_depth);
-  if (b.can_eat_king()) {
+  if (b.can_eat_king())
     return mate;  // the previous player left his king under check, we won
-  }
   int standing_pat = b.hc_heuristic_score<use_new>(nnue_state);
-  if (max_diving_depth <= 0) {
+  if (max_diving_depth <= 0)
     return standing_pat;
-  }
   const bool in_check = b.is_check(), quick = !in_check;  // @30s 80:45 +100 Elo
   int best_score = -inf;  // only to detect checkmates
   if (quick) {
@@ -113,18 +111,22 @@ __device__ int quiescence(const board& b, nnue_state_t<use_new>& nnue_state, int
       alpha = value;
     }
   }
+  if (in_check && best_score <= -9e3)
+    return -mate;
   return in_check && best_score <= -9e3 ? best_score : alpha;
 }
 
 
 template<bool use_new, bool is_outer, int split_depth>
-__device__ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha, int beta, curandState_t& curand_state, hashes_vec_t& hash_history, TT<use_new>& ttable, KillerMoves& killer_moves, nnue_state_t<use_new> nnue_state) {
+__device__ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha, int beta, curandState_t& curand_state, hashes_vec_t& hash_history, TT<use_new>& ttable, KillerMoves& killer_moves, nnue_state_t<use_new>& nnue_state) {
   const int alpha0 = alpha;
   const bool tt_interaction = false;//!is_outer && depth >= 1;  // @3s 309.0:211.0 +66 Elo, 1 vs 2 @3s 99.5:149.5 -71 Elo, 3 vs 2 @3s 138:90 +74 Elo, 3 vs none @3s 67:35 +113 Elo, @30s 84.5:15.5 +295 Elo; MUCH later 3 vs 2 @3s 89:52 +93 Elo, @30s 462.5:371.5 +38 Elo, 1 vs 2 @3s 140.5:91.5 +75 Elo @30s 421:336 +39 Elo
   const int mate = 1e4 * pow(1.01, depth);
 //  if (!is_outer && depth >= 2 && --left_nodes <= 0) {
 //    return unk;
 //  }
+  if (!is_outer && depth >= 0 && b.can_eat_king())
+    return mate;
 
   if (depth >= 2 && b.is_stalemate()) {  // @10s 1023:887 +25 Elo
     return clamp(0, alpha, beta);

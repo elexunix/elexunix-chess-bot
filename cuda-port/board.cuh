@@ -101,10 +101,10 @@ static_assert(sizeof(move) == 4);
 //static_assert(std::is_invocable_v<std::ranges::greater, move, move>);
 
 
-constexpr int enough = 100;  // ub for the number of possible moves, mb 218
+constexpr int enough = 150;  // ub for the number of possible moves, mb 218; 100 was exceeded
 using moves_vec_t = const_sized_vec<move, enough>;
 constexpr int max_game_length = 256;
-using hashes_vec_t = const_sized_vec<uint64_t,max_game_length>;
+using hashes_vec_t = const_sized_vec<uint64_t,max_game_length+16>;
 using string = const_sized_vec<char,100>;
 
 enum color { WHITE, BLACK };
@@ -340,7 +340,7 @@ private:
     return false;
   }
 public:
-  __host__ __device__ board() {}
+  board() = default;  // automatically __host__ __device__
   explicit __device__ board(int) : white_pawns(0xff << 8), white_knights(0x42), white_bishops(0x24), white_rooks(0x81), white_queens(0x08), white_king_i(0), white_king_j(4),
                         black_pawns(0xffull << 48), black_knights(0x42ull << 56), black_bishops(0x24ull << 56), black_rooks(0x81ull << 56), black_queens(0x08ull << 56), black_king_i(7), black_king_j(4),
                         rook00_moved(false), rook07_moved(false), king04_moved(false), rook70_moved(false), rook77_moved(false), king74_moved(false) {
@@ -348,7 +348,7 @@ public:
     recalc_hash();
   }
 
-  __host__ __device__ board(const board&) {}
+  board(const board&) = default;  // automatically __host__ __device__
 
   /*board(std::string fen) {
     assert(precalced);
@@ -887,7 +887,9 @@ public:
       if (i)
         fen.push_back('/');
     }
+    fen.push_back(' ');
     fen.push_back(side2move == WHITE ? 'w' : 'b');
+    fen.push_back(' ');
     string castlings;
     if (!king04_moved && !rook07_moved)
       castlings.push_back('K');
