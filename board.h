@@ -28,7 +28,7 @@ constexpr auto clamp(auto x, auto a, auto b) { return x < a ? a : x > b ? b : x;
 
 struct move {
   //int8_t i0 = -1, j0 = -1, i1 = -1, j1 = -1;
-  int8_t i0:4 = 1, j0:4 = -1, i1:4 = -1, j1:4 = -1;  // int->int16_t slows down 5%, but int8_t is same speed thankfully
+  int8_t i0:4 = -1, j0:4 = -1, i1:4 = -1, j1:4 = -1;  // int->int16_t slows down 5%, but int8_t is same speed thankfully
   move() {}
   move(int8_t i0, int8_t j0, int8_t i1, int8_t j1) : i0(i0), j0(j0), i1(i1), j1(j1) {}
   move(int from, int to) : i0(from >> 3), j0(from & 7), i1(to >> 3), j1(to & 7) {}
@@ -737,11 +737,10 @@ public:
       en_passant_sq = (from + to) / 2;
     zobrist_hash ^= zobrist_bases[13][en_passant_sq];
 
-    if (to == (side2move == WHITE ? black_king_i<<3|black_king_j : white_king_i<<3|white_king_j))
-      return true;
+    bool ret = to == (side2move == WHITE ? black_king_i<<3|black_king_j : white_king_i<<3|white_king_j);
     if constexpr (toggle_colors)
       toggle_identity();
-    return false;
+    return ret;
   }
 
   template<bool toggle_colors>

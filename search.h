@@ -142,7 +142,7 @@ struct tt_entry {
     }
     return false;
   }
-};  // w/o atomics (when single thread surprisingly +0 Elo)
+};  // w/o atomics (when single thread) surprisingly only +0 Elo
 
 template<bool use_new>
 struct TT {
@@ -183,7 +183,6 @@ public:
       entry.store(0xdeadbeef, 0, 0, 0, move());  // will fail the reads
   }
 };
-
 
 // std::atomic<__uint128_t>::is_always_lock_free and std::atomic<__uint128_t>(0).is_lock_free() are falseon my cpu
 //template<>  // fails (-500 Elo) bc 12 bit is too narrow to store inf
@@ -314,8 +313,14 @@ int quiescence(const board& b, nnue_state_t<use_new>& nnue_state, int alpha, int
     int value;
     if (b2.make_move(m))
       value = mate;
-    else
-      nnue_state.update(b, b2), value = -quiescence<use_new>(b2, nnue_state, -beta, -alpha, max_diving_depth - 1, qttable), nnue_state.update(b2, b);
+    else {
+      constexpr bool just_copy_nnue_state = true;  // @.1s 317.5:237.5 +50 Elo @1s 290:220 +48 Elo @10s 1611:1440 +19 Elo
+      std::conditional_t<just_copy_nnue_state,nnue_state_t<use_new>,nnue_state_t<use_new>&> mb_local_nnue_state(nnue_state);
+      mb_local_nnue_state.update(b, b2);
+      value = -quiescence<use_new>(b2, mb_local_nnue_state, -beta, -alpha, max_diving_depth - 1, qttable);
+      if (!just_copy_nnue_state)
+        mb_local_nnue_state.update(b2, b);
+    }
     if (value >= beta) {
       if (qtt_interaction)
         qttable.inform(b, max_diving_depth, value, +TT<use_new>::tt_inf, m);
@@ -328,6 +333,8 @@ int quiescence(const board& b, nnue_state_t<use_new>& nnue_state, int alpha, int
   }
   if (qtt_interaction)
     qttable.inform(b, max_diving_depth, alpha > alpha0 ? alpha : -TT<use_new>::tt_inf, alpha, move());
+  if (false && in_check && best_score == -inf)  // @.1s 79330:79037 mb +1 Elo p=0.770 @1s 10949:10979 mb -0 Elo p=0.419
+    return -mate;
   return in_check && best_score <= -9e3 ? best_score : alpha;
 }
 
@@ -347,24 +354,22 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
   if (!is_outer && depth >= 0 && b.can_eat_king())  // @0.1s 14587:14064 +6 Elo @1s 1552.5:1383.5 +20 Elo @10s 644:537 +32 Elo; 0:1 @.1s 40051.5:40348.5 mb -1 Elo p=0.137 @1s 11357.5:11130.5 mb +4 Elo p=0.934
     return mate;
 
-  if (depth >= 2 && b.is_stalemate()) {  // @10s 1023:887 +25 Elo; 1:2 @0.1s 21581:22230 -5 Elo @1s 4203:4261 mb -2 Elo p=0.260
-    return std::clamp(0, alpha, beta);
-  }
+  if (depth >= 2 && b.is_stalemate())  // @10s 1023:887 +25 Elo; 1:2 @0.1s 21581:22230 -5 Elo @1s 4203:4261 mb -2 Elo p=0.260
+    return clamp(0, alpha, beta);
 
   const bool maintain_hashes = depth >= (false ? 2 : 3);  // with old tt: 2:3 @.1s 66494:66368 mb +0 Elo, @1s 4297.5:4440.5 mb -6 Elo
   if (maintain_hashes) {
     if (!is_outer && hash_history.size() >= 10) {
       //#pragma unroll(10)
       // start from start @30s 376:466 -37 Elo, if also d≥4 @30s 287:366 -42 Elo, d≥5 93.5:123.5 mb -48 Elo
-      for (auto it = false ? hash_history.begin() + hash_history.size() % 2 : hash_history.end() - 10; it < hash_history.end(); it += 2)  // d≥6⇒check from 0 @1s 4297.5:4440.5 mb -6 Elo p=.170
+      for (auto it = false && depth >= 6 ? hash_history.begin() + hash_history.size() % 2 : hash_history.end() - 10; it < hash_history.end(); it += 2)  // d≥6⇒check from 0 @1s 4297.5:4440.5 mb -6 Elo p=.170; later (when nn10f13) still @1s 14166.5:14014.5 mb +2 Elo p=0.817 @10s 1375:1386 mb -1 Elo p=0.417
         if (*it == b.get_hash())
           return 0;
     }
   }
   if (depth <= 0)  // quiescence vs just eval @30s 72.5:27.5 +168 Elo
-    return quiescence<use_new>(b, nnue_state, alpha, beta, 4, qttable);  // @.2s 50988:50564 mb +1 Elo p=0.908
+    return quiescence<use_new>(b, nnue_state, alpha, beta, 5, qttable);  // 5:4 @0.1s 1912:2105 -17 Elo; after retraining nnue on a stable ds 5:4 @.1s 18863.5:18396.5 mb +4 Elo p=0.991 @1s 3596.5:3366.5 mb +11 Elo p=0.996, 6:5 @.1s 25039.5:24849.5 mb +1 Elo p=0.800 @1s 8411:8453 mb -1 Elo p=0.373
   if (tt_interaction) {
-    //auto [entry, found] = ttable.find(b);
     bool found;
     int entry_depth, entry_lb, entry_ub;
     move entry_bestmove;
@@ -396,15 +401,16 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
     hash_history.push_back(b.get_hash());
 
   // d≥2 vs d≥3 @3s 1063.5:925.5 +24 Elo, @25s 561.5:462.5 +34 Elo
-  const bool can_do_nmp = !is_outer && depth >= 2 && !b.is_check() && b.has_sufficient_material_for_nmp() /*some protection against zugzwang*/ ;//&& (false ? b.hc_heuristic_score<use_new>() >= beta : true); // enabling first is @1.5s 11870:11872 +0 Elo, later @3s 2190.5:2186.5 mb +0 Elo
+  const bool can_do_nmp = !is_outer && depth >= 2 && !b.is_check() && b.has_sufficient_material_for_nmp() /*some protection against zugzwangs*/ ;//&& (false ? b.hc_heuristic_score<use_new>() >= beta : true); // enabling first is @1.5s 11870:11872 +0 Elo, later @3s 2190.5:2186.5 mb +0 Elo
   if (can_do_nmp) {  // without pop_back: @3s 649:766 -29 Elo, @30s 33:67 -123 Elo; correct: @3s 13866.5:13355.5 +7 Elo, @30s 185:175 mb +10 Elo
-    const int R = 2;  // increasing reduces Elo
+    const int R = 2;  // 3:2 reduces Elo
     board b2(b);
     b2.make_null_move<false>();
     move useless;
     int null_score = -compute_alphabeta_2<use_new, false, split_depth, is_helper_thread>(b2, useless, depth - 1 - R, -beta, -beta + 1, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search);
     if (null_score == -unk) {
-      if (maintain_hashes) hash_history.pop_back();
+      if (maintain_hashes)
+        hash_history.pop_back();
       return unk;
     }
     if (null_score >= beta) {
@@ -512,7 +518,7 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
     int entry_depth, entry_lb, entry_ub;
     move entry_bestmove;
     if constexpr (true)
-      found = qttable.find(b, entry_depth, entry_lb, entry_ub, entry_bestmove);
+      found = ttable.find(b, entry_depth, entry_lb, entry_ub, entry_bestmove);  // fix fatal bug with qttable here: @.1s 800.5:680.5 +28 Elo @1s 253:189 +51 Elo @10s 179.5:120.5 +69 Elo
     else {
       auto [entry, found_] = qttable.find(b);
       if (found = found_)
@@ -524,7 +530,8 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
   if (best_move_guess == move() && depth >= 3) {
     int eval = compute_alphabeta_2<use_new, false, 0, is_helper_thread>(b, best_move_guess, depth - 2, -inf, +inf, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search);
     if (eval == unk) {
-      if (maintain_hashes) hash_history.pop_back();
+      if (maintain_hashes)
+        hash_history.pop_back();
       return unk;
     }
   }
@@ -572,9 +579,74 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
       possible_moves[move_i ] = moves_[move_i].second;
   }
 
+  auto search_child_node = [&b, &ttable, &qttable, mate, maintain_hashes, &hash_history,&nnue_state, &stop_search](const move &m, int depth, int alpha, int beta, int move_i, std::mt19937 &local_gen, std::vector<uint64_t> &local_hash_history, KillerMoves &killer_moves) -> int {
+    constexpr bool just_copy_nnue_state = true;  // @.1s 1201:1363 -22 Elo
+    std::conditional_t<just_copy_nnue_state,nnue_state_t<use_new>,nnue_state_t<use_new>&> mb_local_nnue_state(nnue_state);
+    alpha -= is_outer;  // in case of outer, we really care if it's exactly α or less
+    constexpr bool use_pvs = false;  // idk why doesn't help; I was unable to find the bug. maybe the move ordering is not ripe yet -- let's focus on implementing other important things for now; much later: @.4s 40k:40k mb +0 Elo; even later: @.1s 77457:77632 mb -0 Elo p=0.331 @1s 25355:25296 mb +0 Elo p=0.603 @10s 1568.5:1570.5 mb -0 Elo p=0.485
+    const bool use_lmr = move_i >= 2; // @.3s 273:34 +362 Elo, @3s 68:34 +120 Elo, @30s 80:45 +100 Elo, 4 vs 2 @30s 79:123 -77 Elo; much later 3 vs 2 @.3s 23553:23826 mb -2 Elo, @3s 897:905 mb -2 Elo, 1 vs 2 @.3s 6314:6668 -9 Elo, @3s 2647:2878 -15 Elo
+    // don't apply lmr to captures @.1s 8333:8738 -8 Elo @1s 12544:13039 -7 Elo @10s 4164:4332 mb -7 Elo p=0.034
+    board tmp(b);
+    move useless;
+    int value = tmp.make_move(m) ? mate : 0;
+    if (value == 0) {
+      mb_local_nnue_state.update(b, tmp);
+      constexpr int new_split_depth = max(0, split_depth - 1);
+      /*if constexpr (use_pvs) {  // PVS
+        value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -alpha - 1, -alpha, local_gen, local_hash_history, ttable, killer_moves);
+        if (value > alpha && value < beta) {
+          value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, killer_moves);
+        }
+      } else {
+        value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, killer_moves);
+      }*/
+      if (use_lmr) {  // LMR
+        const int reduction = 2;  // 2 vs 4 @.3s 4301:4019 +12 Elo, 4 vs 2 @3s 41.5:73.5 -99 Elo, 4 vs 2 @30s 37.5:69.5 -107 Elo; later 3 vs 2 @.3s 1101.5:1250.5 -22 Elo, @3s 565.5:676.5 -31 Elo, 1 vs 2 @.3s 1014.5:1162.5 -24 Elo, 4 vs 2 @.3s 84.5:132.5 -78 Elo, @3s 41.5:75.5 -104 Elo
+        value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1 - reduction, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, mb_local_nnue_state, stop_search);
+        if (value == -unk)  // bugfix: don't popback here, our parent will do it
+          return unk;
+        if (value > alpha)
+          value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, mb_local_nnue_state, stop_search);
+      } else {
+        value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, mb_local_nnue_state, stop_search);
+      }
+      if (value == -unk)  // bugfix: don't popback here, our parent will do it
+        return unk;
+      if (!just_copy_nnue_state)
+        mb_local_nnue_state.update(tmp, b);  // not needed
+    }
+    return value;
+  };
+
 
 
   move best_move_found;
+
+  bool singular_hope = false && use_new && !is_outer && depth >= 6 && cnt_possible_moves >= 1;  // mb check best_move_guess or maybe just rollout
+  // old: d≥6 d-=d/2 sing_margin=40 @20s 13180:13050 mb +2 Elo p=0.788
+  // @10s 2243:2187 mb +4 Elo p=0.799
+  const int singular_margin = 60;  // will halve when i am finally able to drop doubling nn eval...
+  for (int move_i = 1; move_i < cnt_possible_moves; ++move_i)
+    if (!singular_hope || search_child_node(possible_moves[move_i], depth - depth/2, alpha - singular_margin, alpha - singular_margin + 1, move_i, gen, hash_history, killer_moves) > alpha - singular_margin)
+      singular_hope = false;
+  int extension = singular_hope;
+  /*if (singular_hope) {  // ..has not died
+    board tmp(b);
+    move useless;
+    int value;
+    put_bestmove = possible_moves[0];
+    if (tmp.make_move(possible_moves[0]))
+      value = mate;
+    else
+      nnue_state.update(b,tmp), value = -compute_alphabeta_2<use_new,false,split_depth,is_helper_thread>(tmp, useless, depth, -beta, -alpha, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search), nnue_state.update(tmp,b);
+    if (maintain_hashes)
+      hash_history.pop_back();
+    if (value == -unk)
+      return unk;
+    if (tt_interaction)
+      ttable.inform(b, depth, value > alpha0 ? value : -TT<use_new>::tt_inf, alpha, possible_moves[0]);
+    return value;
+  }*/
 
   // process the first move sequentially to establish a good alpha bound
   {
@@ -584,10 +656,15 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
     int value;
     if (tmp.make_move(m))
       value = mate;
-    else
-      nnue_state.update(b, tmp), value = -compute_alphabeta_2<use_new, false, split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search), nnue_state.update(tmp, b);
+    else {
+      nnue_state.update(b, tmp), value = -compute_alphabeta_2<use_new, false, split_depth, is_helper_thread>(tmp, useless, depth - 1 + extension, -beta, -alpha, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search), nnue_state.update(tmp, b);
+      //nnue_state_t<use_new> next_nnue_state(nnue_state);
+      //next_nnue_state.update(b, tmp);
+      //value = -compute_alphabeta_2<use_new, false, split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search);
+    }
     if (value == -unk) {
-      if (maintain_hashes) hash_history.pop_back();
+      if (maintain_hashes)
+        hash_history.pop_back();
       return unk;
     }
 
@@ -609,49 +686,8 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
   }
   int cnt_best = 1;
 
-  auto search_child_node = [&b, &ttable, &qttable, mate, maintain_hashes, &hash_history, &nnue_state, &stop_search](const move &m, int depth, int alpha, int beta, int move_i, std::mt19937 &local_gen, std::vector<uint64_t> &local_hash_history, KillerMoves &killer_moves) -> int {
-    nnue_state_t local_nnue_state(nnue_state);
-    alpha -= is_outer;  // in case of outer, we really care if it's exactly α or less
-    constexpr bool use_pvs = use_new;  // idk why but PVS is -10 Elo. I was unable to find the bug. maybe the move ordering is not ripe yet -- let's focus on implementing other important things for now; much later: @.4s 40k:40k mb +0 Elo; even later: @.1s 77457:77632 mb -0 Elo p=0.331
-    const bool use_lmr = move_i >= 2; // @.3s 273:34 +362 Elo, @3s 68:34 +120 Elo, @30s 80:45 +100 Elo, 4 vs 2 @30s 79:123 -77 Elo; much later 3 vs 2 @.3s 23553:23826 mb -2 Elo, @3s 897:905 mb -2 Elo, 1 vs 2 @.3s 6314:6668 -9 Elo, @3s 2647:2878 -15 Elo
-    // don't apply lmr to captures @.1s 8333:8738 -8 Elo @1s 12544:13039 -7 Elo @10s 4164:4332 mb -7 Elo p=0.034
-    board tmp(b);
-    move useless;
-    int value = tmp.make_move(m) ? mate : 0;
-    if (value == 0) {
-      local_nnue_state.update(b, tmp);
-      constexpr int new_split_depth = max(0, split_depth - 1);
-      /*if constexpr (use_pvs) {  // PVS
-        value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -alpha - 1, -alpha, local_gen, local_hash_history, ttable, killer_moves);
-        if (value > alpha && value < beta) {
-          value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, killer_moves);
-        }
-      } else {
-        value = -compute_alphabeta_2<use_new, false, new_split_depth>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, killer_moves);
-      }*/
-      if (use_lmr) {  // LMR
-        const int reduction = 2;  // 2 vs 4 @.3s 4301:4019 +12 Elo, 4 vs 2 @3s 41.5:73.5 -99 Elo, 4 vs 2 @30s 37.5:69.5 -107 Elo; later 3 vs 2 @.3s 1101.5:1250.5 -22 Elo, @3s 565.5:676.5 -31 Elo, 1 vs 2 @.3s 1014.5:1162.5 -24 Elo, 4 vs 2 @.3s 84.5:132.5 -78 Elo, @3s 41.5:75.5 -104 Elo
-        value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1 - reduction, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, local_nnue_state, stop_search);
-        if (value == -unk) {  // bugfix: don't popback here, our parent will do it
-          return unk;
-        }
-        if (value > alpha)
-          value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, local_nnue_state, stop_search);
-      } else {
-        value = -compute_alphabeta_2<use_new, false, new_split_depth, is_helper_thread>(tmp, useless, depth - 1, -beta, -alpha, local_gen, local_hash_history, ttable, qttable, killer_moves, local_nnue_state, stop_search);
-      }
-      if (value == -unk) {  // bugfix: don't popback here, our parent will do it
-        return unk;
-      }
-      //local_nnue_state.update(tmp, b);  // not needed
-    }
-    return value;
-  };
-
   // process remaining moves
   constexpr bool run_parallel = !is_outer && split_depth > 0;
-    bool singular_hope = false;//use_new && !is_outer && depth >= 6;  // d≥6 sing_margin=40 @20s 13180:13050 mb +2 Elo p=0.788
-    const int singular_margin = 40;
 
   if constexpr (run_parallel) {
     std::vector<int> results(possible_moves.size());
@@ -694,11 +730,12 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
     for (size_t i = 1; i < possible_moves.size(); ++i) {
       const auto& m = possible_moves[i];
       int value;
-      if (!singular_hope || search_child_node(m, depth - 2, alpha - singular_margin, alpha - singular_margin + 1, i, gen, hash_history, killer_moves) > alpha - singular_margin)  // mystery: even with +singular_margin in both places, sing ext h is @2s 436:420 mb +6 Elo p=0.696
-        singular_hope = false;
+      //if (!singular_hope || search_child_node(m, depth - depth/2, alpha - singular_margin, alpha - singular_margin + 1, i, gen, hash_history, killer_moves) > alpha - singular_margin)
+      //  singular_hope = false;
       value = search_child_node(m, depth, alpha, beta, i, gen, hash_history, killer_moves);
       if (value == unk) {
-        if (maintain_hashes) hash_history.pop_back();
+        if (maintain_hashes)
+          hash_history.pop_back();
         return unk;
       }
       if (value > alpha) {
@@ -722,24 +759,10 @@ int compute_alphabeta_2(const board& b, move& put_bestmove, int depth, int alpha
   }
 
   put_bestmove = best_move_found;
-  if (singular_hope) {  // ..has not died
-    board tmp(b);
-    move useless;
-    int value;
-    if (tmp.make_move(put_bestmove))
-      value = mate;
-    else
-      nnue_state.update(b,tmp), value = -compute_alphabeta_2<use_new,false,split_depth,is_helper_thread>(tmp, useless, depth, -beta, -alpha, gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search), nnue_state.update(tmp,b);
-    if (maintain_hashes)
-      hash_history.pop_back();
-    return value;
-  }
   if (maintain_hashes)
     hash_history.pop_back();
-  if (tt_interaction) {
-    int lower_bound = alpha > alpha0 ? alpha : -TT<use_new>::tt_inf;
-    ttable.inform(b, depth, lower_bound, alpha, best_move_found);
-  }
+  if (tt_interaction)
+    ttable.inform(b, depth, alpha > alpha0 ? alpha : -TT<use_new>::tt_inf, alpha, best_move_found);
   return alpha;
 }
 

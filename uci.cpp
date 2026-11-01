@@ -9,7 +9,7 @@
 #include "heuristic_eval.h"
 #include "search.h"
 
-constexpr bool use_new = false;
+constexpr bool use_new = true;
 
 std::string move_to_uci(const move& m, const board& b) {
   std::string uci = "";

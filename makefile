@@ -2,7 +2,8 @@
 CFLAGS = -g -std=c++26 -mavx2 -mfma
 compete:
 	g++ -Ofast $(CFLAGS) -Wunknown-pragmas compete.cpp -o compete
-	nice -n20 ./compete $(ARGS) | tee -a logs
+	#nice -n20 ./compete $(ARGS) | tee -a logs
+	./compete $(ARGS) | tee -a logs
 	rm compete
 debug:
 	g++ -O0 $(CFLAGS) main.cpp -o main
@@ -24,5 +25,5 @@ uci:
 dataset:
 	g++ -Ofast $(CFLAGS) collect_dataset.cpp -o collect_dataset
 	nice -n19 ./collect_dataset
-	rm collect_dataset
-	./analyze_dataset.py
+	#rm collect_dataset
+	#./analyze_dataset.py

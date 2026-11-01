@@ -42,6 +42,7 @@ int main() {
     std::cout << "\n\n\n\n";
   }
 reenter_color:
+  std::cout << "Warning!! THIS VERSION IS SINGLE_THREADED!\n\n";
   std::cout << "choose your number (first/second): ";
   std::string s;
   std::cin >> s;
@@ -68,8 +69,9 @@ reenter_color:
   while (true) {
     move m;
     double t0 = clock(), T0 = get_wall_time();
+    std::atomic<bool> stop_search(false);
     for (int d = 1; get_wall_time() - T0 <= 2 && d <= 50; d += 1) {  // (0 + remaining_time / 50) / 4
-      int eval = compute_alphabeta_2<use_new, true, 1>(b, m, d, -inf, +inf, host_gen, hash_history, ttable, qttable, killer_moves, nnue_state);
+      int eval = compute_alphabeta_2<use_new,true,0,false>(b, m, d, -inf, +inf, host_gen, hash_history, ttable, qttable, killer_moves, nnue_state, stop_search);
       std::cout << "depth " << d << " time " << get_wall_time() - T0 << " eval " << eval << " bestmove " << m << std::endl;
     }
     double wc_time = get_wall_time() - T0, cpu_time = (clock() - t0) / double(CLOCKS_PER_SEC);

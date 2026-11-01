@@ -2,16 +2,13 @@
 #include <cassert>
 #include <cmath>
 #include <condition_variable>
-#include <ctime>
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <mutex>
 #include <random>
-#include <ranges>
 #include <thread>
 #include <unordered_map>
-#include <sys/time.h>
 #include "board.h"
 #include "heuristic_eval.h"
 #include "search.h"
@@ -32,9 +29,8 @@ void compete(const auto& f_new, const auto& f_old, double scores[2]/*new:old*/, 
       for (int game_i = 1;; ++game_i) {
         const bool verbose = thread_i == 0 && game_i == 1;
         const bool is_new_white = thread_i + game_i & 1;
-        if (game_i > 1) {
+        if (game_i > 1)
           condvar.notify_one();
-        }
         std::unordered_map<board, int> history_cnts;
         std::string history_pgn;
         board b(true);
@@ -59,8 +55,7 @@ void compete(const auto& f_new, const auto& f_old, double scores[2]/*new:old*/, 
           }
           move m;
           double t0 = clock(), T0 = get_wall_time();
-          KillerMoves killer_moves_new;
-          KillerMoves killer_moves_old;
+          KillerMoves killer_moves_old, killer_moves_new;
 //          if (is_news_turn && (m = b.get_unique_legal_move()) != move()) {  // @0.1s 223720.5:224104.5 mb -0 Elo, mb due to cold TT
 //            if (verbose) {
 //              std::cout << "game " << game_i << " move " << move_i << " time " << get_wall_time() - T0 << " onlymove " << m << std::endl;
@@ -204,8 +199,10 @@ T logsumexp(const std::vector<T> v) {
 int main(int argc, const char **argv) {
   // what we were GIVING AWAY with pst+datasets: @0.1s 952:817 +27 Elo, @1s 305.5:232.5 +47 Elo, @3s 186.5:113.5 +86 Elo, @10s 179:121 +68 Elo; we more than recovered since
   //const std::string update_desc = "9f9:9f9 7 /2 : 15 /4";
-  const std::string update_desc = "pvs";
-  const float time_control = argc > 1 ? std::stof(argv[1]) : 20;
+  const std::string update_desc = //"sing d≥6 60 d-=d/2 better practice 2";
+                                  //"(10j5) qs 6:5";//"10j:10f13";
+                                  "l4:j5";
+  const float time_control = argc > 1 ? std::stof(argv[1]) : 1.2;
   // current mt8 version:single th @10s 75:47 mb +81 Elo p_>=.994 @100s 72.5:37.5 +114 Elo
 
 
@@ -292,7 +289,7 @@ int main(int argc, const char **argv) {
     }
     long double log_integral = logsumexp(log_summands_num), log_evidence = logsumexp(log_summands_den),
                 p_better = std::exp(log_integral - log_evidence);
-    if (new_total < last_total * 1.02 && .001 < p_better && p_better < .999) return false;
+    if (new_total < last_total * 1.02 && .0001 < p_better && p_better < .9999) return false;
     last_total = new_total;
     std::string s = report_str(scores, false);
     std::cout << update_desc << "\n";
@@ -304,7 +301,7 @@ int main(int argc, const char **argv) {
     }
     if (new_total >= 50) std::cout << /*"P(better) = " <<*/ " p=" << p_better;
     std::cout << ",\n" << std::endl;
-    return new_total >= 300 && (p_better < .001 || p_better > .999) && (finished = true);
+    return new_total >= 300 && (p_better < .0001 || p_better > .9999) && (finished = true);
   });
   competition_host.join();
   std::cout << "\n\n ====================\n";

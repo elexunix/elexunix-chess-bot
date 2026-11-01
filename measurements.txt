@@ -102,5 +102,51 @@ mb initial lr was too high and we broke 9f9's weights, let's try 1e-6 wd back to
 but it learned to predict scaled! now (15n+1s)/8[with new net]:(15n+1s)/4[old] 9l0[/8]:9f9[/4] @.1s 57053.5:56008.5 +3 Elo, 9l4[/8]:9f9[/4] @.1s 8944:8540 +8 Elo @2s 621.5:649.5 mb -8 Elo p=0.207; (7*9l4+1hc)/8:(15*9f9+1hc)/4 @.2s 2552.5:2327.5 +16 Elo @2s 7462.5:7087.5 +9 Elo
 9m0: @.2s 442:358 +37 Elo @2s 745.5:628.5 +30 Elo  ???
 @.2s 556.5:667.5 -32 Elo
+smth @0.1s 18095.5:17503.5 +6 Elo
 
-@0.1s 18095.5:17503.5 +6 Elo
+collect huge dataset at low depth, train streaming
+10a:9 @.1s 11882.5:11406.5 +7 Elo @1s 2948:2716 +14 Elo
+10b: 256 8 8 1
+10b:10a @.1s 138.5:197.5 -62 Elo @1s 2780.5:3016.5 -14 Elo @10s 1186.5:1178.5 mb +1 Elo p=0.565
+10c: 256 16 16 1
+10c:10a @0.1s 100.5:212.5 -130 Elo @1s 115:186 -84 Elo @10s 483.5:584.5 -33 Elo
+@100s @100s 56.5:56.5 mb +0 Elo p=0.5
+10d halfkp 128 8 8 1 lr 1e-3->.. wd 1e-6
+first ckpt [5k/81k batches] @.15s 60.5:253.5 -249 Elo @1.5s 79:226 -183 Elo @10s 67:233 -217 Elo
+second ckpt [10k/81k batches] @10s 104.5:195.5 -109 Elo
+10e: same but warm start from 10a, @2k b @10s 111.5:190.5 -93 Elo, @4k b @10s 120.5:179.5 -69 Elo, @6k b @10s 110.5:192.5 -96 Elo
+10f: same but much better in terms of dataset loading; incomparably better, >10x faster since cpu->gpu only indices of nonzero feats, also bs 4k->16k, @0k b @1s 604.5:719.5 -30 Elo, @2k b @1s 1479.5:1652.5 -19 Elo, noticed many "lost on time" here bc cpu is extremely busy loading data for training, decreased competition niceness, @6k b @1s 146.5:204.5 -58 Elo this is way more realistic, @10s 261.5:337.5 -44 Elo
+@18k b @1s 472:599 -41 Elo, @10s 214:262 mb -35 Elo p=0.013
+final 10f0_hkp @1s 273:351 -44 Elo @10s 867.5:942.5 mb -14 Elo p=0.037 @100s 84:84 mb +0 Elo
+tried copying nnue_state_t instead of unmaking moves in 2 places, but then it's even worse: 98:203 -127 Elo
+10f1 @1s 12949.5:13098.5 mb -2 Elo p=0.176 @10s 1260:1217 mb +6 Elo p=0.806
+10f13:10a0 @2s 462:372 +38 Elo @20s 182:127 +63 Elo @200s 392.5:310.5 +41 Elo
+10h: 256 8 8 1, where first 2 eps are pretraining without halfkp, then 12 epochs are warm-started from that small net extended with zeros for second-order features
+10h04:10a0 @1s 362:493 -54 Elo @10s 190:196 mb -5 Elo p=0.399 @100s 36.5:32.5
+10h04:10f13 @1s 105:197 -109 Elo @10s 122.5:179.5 -66 Elo
+10h05:10f13 @.1s 120.5:190.5 -80 Elo @1s 170:233 -55 Elo @10s 170:232 -54 Elo
+10h13:10f13 @2s 434:528 -34 Elo @20s 873.5:1008.5 -25 Elo
+dataset10_d8: same as 10_d4 but much smaller for ft @d8, still filtering out evals >±500cp instead of unstable positions
+10i: ft on dataset10_d8, base 10f13
+just one ep from 1e-4: 10i00:10f13 @.1s 583:701 -32 Elo @1s 1850.5:2044.5 -17 Elo
+was overfitting wd was not helping (no surprise: model is huge), tried init lr=1e-5
+10i03:10f13 @.2s 1783:1979 -18 Elo
+10i03:10i02 @.1s 3643.5:3668.5 mb -1 Elo p=0.402 @1s 697:704 mb -2 Elo p=0.425
+this d8 is useless (lr=1e-5 wd=1e-4 is below, but i tried others also)
+10i02:10f13 @.1s 684:811 -30 Elo @1s 1630:1652 mb -2 Elo p=.337 @10s 505:524 mb -6 Elo p=.276 @1s 856:850 mb +1 Elo p=0.567
+instead ft on datasetd4_2: allow all debuts, but filter out where static eval differs from max depth eval by >150
+10i03:10f13 @.15s 5154.5:4846.5 +11 Elo @1.5
+10j0:10f13 @.1s 434:345 +40 Elo @1s 928.5:796.5 +27 Elo @10s 1295:1141 +22 Elo
+@0.1s 989:850 +26 Elo @1s 569.5:466.5 +35 Elo
+10j0: @0.1s 857:733 +27 Elo @1s 2657.5:2435.5 +15 Elo
+10j2:10f13 @0.1s 263:196 +51 Elo @1s 1041.5:907.5 +24 Elo @10s 889:763 +27 Elo
+j3:j2 @.05s 3310:3017 +16 Elo, 4:3 @.05s 20186:19446 +6 Elo, 5:4 @.05s 154215.5:152521.5 mb +2 Elo p=0.9988 @.5s 13702:13451 mb +3 Elo p=0.933
+10j5:10f13 @.1s 312.5:225.5 +57 Elo @1s 184.5:116.5 +80 Elo @10s 326.5:237.5 +55 Elo
+k4:j5 @.1s 121:206 -92 Elo @1s 111:198 -101 Elo @10s 317:379 mb -31 Elo p=0.0093 @100s 89:111 mb -38 Elo
+l0:j5 @.1s 22610:23409 -6 Elo @1s 2238:2216 mb +2 Elo p=0.629
+v10=10j05
+==== with 10j05 ~2250 fide elo ====
+
+10l: ft from 10j5 using newly collected dataset11_d4_0
+l4:j5 @.1s 53444.5:52238.5 +4 Elo @1s 3710.5:3465.5 mb +12 Elo p=0.998 @10s 2990:2812 mb +11 Elo p=0.9902
+10m: testing 128 16 16 1 again. after 1ep 128 16 16 1 on dataset11_d4_0 and 1ep 128 8 8 1 the score is (10m00=16..:10m01=8..) @.1s 2116:2363 -19 Elo @1s 758:908 -31 Elo, which is not bad, let's train both for +3eps in hope to finally see 16winning over 8? no. mb dataset @d4 is really garbage in garbage out, need ds @d8

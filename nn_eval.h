@@ -6,20 +6,22 @@
 #include "board.h"
 
 const std::string models_dir = "/home/elexunix/aprog/cpp/tests/tests06__/test0655-chess/bitmask-v9-nnue/models/";
-const std::string filename_old = models_dir+"model_v9_128_8_8.bin",//"model9h12.bin",
-                  //filename_new = "model10b0_tmp.bin";
-                  filename_new = models_dir+"model_v9_128_8_8.bin";
+const std::string filename_old = models_dir+//"model_v9_128_8_8.bin",
+                                            //"model10a0.bin",
+                                            //"model10f13.bin",
+                                            "model10j05.bin",
+                  filename_new = models_dir+//"model10l04.bin";
+                                            "model10l04.bin";
 float q_step_01, q_step_12, q_step_23, q_step_34;
 
-constexpr int s0 = 768 + 5;
-
-constexpr int s0_old = 773, s1_old = 128, s2_old = 8, s3_old = 8, s4_old = 1;
-alignas(32) static float nn_w01_old[s0][s1_old], nn_w10_old[s1_old][s0_old], nn_b1_old[s1_old],
+// 773 or 772+40960
+constexpr int s0_old = true?772+40960:773, s1_old = 128, s2_old = 8, s3_old = 8, s4_old = 1;
+alignas(32) static float nn_w01_old[s0_old][s1_old], nn_w10_old[s1_old][s0_old], nn_b1_old[s1_old],
              nn_w12_old[s1_old][s2_old], nn_w21_old[s2_old][s1_old], nn_b2_old[s2_old],
              nn_w23_old[s2_old][s3_old], nn_w32_old[s3_old][s2_old], nn_b3_old[s3_old],
              nn_w34_old[s3_old][s4_old], nn_w43_old[s4_old][s3_old], nn_b4_old[s4_old];
 
-constexpr int s0_new = 773/*772+40960*/, s1_new = 128, s2_new = 8, s3_new = 8, s4_new = 1;
+constexpr int s0_new = true?772+40960:773, s1_new = 128, s2_new = 8, s3_new = 8, s4_new = 1;
 alignas(32) static float nn_w01_new[s0_new][s1_new], nn_w10_new[s1_new][s0_new], nn_b1_new[s1_new],
              nn_w12_new[s1_new][s2_new], nn_w21_new[s2_new][s1_new], nn_b2_new[s2_new],
              nn_w23_new[s2_new][s3_new], nn_w32_new[s3_new][s2_new], nn_b3_new[s3_new],
@@ -38,9 +40,23 @@ struct nnue_state_t {  //   @3s 304.5:232.5 +47 Elo, then dual_nnue:nnue @.3s 18
   const float (*nn_w01)[s1], *nn_b1;
   alignas(32) float a1_pre_relu[2][s1];  // 0 for side2move==WHITE, 1 for BLACK
 
-  static constexpr bool use_halfKP = false;
+  static constexpr bool use_halfKP = true;
 
-  nnue_state_t(const board& b) /*: nn_w01(use_new ? nn_w01_new : nn_w01_old), nn_b1(use_new ? nn_b1_new : nn_b1_old)*/ {  //, const float nn_w01[s0][s1], const float nn_b1[s1]) : nn_w01(nn_w01), nn_b1(nn_b1) {
+  /*void refresh_side(const board& b, int side) {
+    for (int j = 0; j < s1; ++j)
+      a1_pre_relu[side][j] = nn_b1[j];
+    int white_king = b.white_king_i<<3|b.white_king_j, black_king = b.black_king_i<<3|b.black_king_j;
+    uint64_t masks[12] = {b.white_pawns, b.white_knights, b.white_bishops, b.white_rooks, b.white_queens, 1ull<<white_king, b.black_pawns, b.black_knights, b.black_bishops, b.black_rooks, b.black_queens, 1ull<<black_king};
+    if (side == 0) {
+      int white_king_summand = 772+white_king*640;
+      for (int i = 0; i < 12; ++i) {
+        for (uint64_t pieces = masks[i]; pieces; pieces &= pieces - 1) {
+
+    } else {
+      int black_king_summand = 772+(black_king^56)*640;
+    }*/
+
+  nnue_state_t(const board& b) {  //, const float nn_w01[s0][s1], const float nn_b1[s1]) : nn_w01(nn_w01), nn_b1(nn_b1) {
     if constexpr (use_new)
       nn_w01 = nn_w01_new, nn_b1 = nn_b1_new;
     else
